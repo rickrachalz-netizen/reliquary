@@ -21,13 +21,17 @@ public class RELIQUARY : ModuleRules
 			"Slate",
 			"GameplayAbilities",
 			"GameplayTags",
-			"GameplayTasks"
+			"GameplayTasks",
+			"DeveloperSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"RELIQUARY",
+			"RELIQUARY/Public",
+			"RELIQUARY/Game",
+			"RELIQUARY/Game/World",
 			"RELIQUARY/Variant_Platforming",
 			"RELIQUARY/Variant_Platforming/Animation",
 			"RELIQUARY/Variant_Combat",

@@ -67,10 +67,42 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystemComponent; }
 	virtual void PossessedBy(AController* NewController) override;
 
+	/**
+	 *  Interact with the nearest thing in front of the character that implements
+	 *  IRLInteractable — altars, banking crates, the forge. Bind this to an input
+	 *  action in the character/controller blueprint.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	bool DoInteract();
+
+	/** Find (without activating) the interactable currently in focus, if any. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	AActor* FindFocusedInteractable() const;
+
 protected:
 	UPROPERTY() TObjectPtr<class UAbilitySystemComponent> AbilitySystemComponent;
 	UPROPERTY() TObjectPtr<class URLAttributeSet> Attributes;
 	void InitGAS();
+
+	/** How far ahead to look for interactables. */
+	UPROPERTY(EditAnywhere, Category = "Interaction")
+	float InteractionRange = 250.f;
+
+	/** Base-camp map opened when the character dies on a run. */
+	UPROPERTY(EditAnywhere, Category = "RELIQUARY")
+	FName BaseCampLevelName = TEXT("L_Lobby");
+
+	/** Called when Health changes; drives death handling. */
+	void OnHealthAttributeChanged(const struct FOnAttributeChangeData& Data);
+
+	/** Forfeit the run, strip run power, and send the player home to base camp. */
+	void HandleRunDeath();
+
+	/** Content hook: play the death reaction before travel to base camp. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "RELIQUARY")
+	void OnRunDeath();
+
+	bool bIsDead = false;
 
 protected:
 
