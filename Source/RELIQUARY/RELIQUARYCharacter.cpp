@@ -13,6 +13,12 @@
 #include "RELIQUARY.h"
 #include "AbilitySystemComponent.h"
 #include "RLAttributeSet.h"
+#include "RLPlayerState.h"
+#include "RLRunSubsystem.h"
+#include "World/RLInteractable.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 
 ARELIQUARYCharacter::ARELIQUARYCharacter()
 {
@@ -149,16 +155,104 @@ void ARELIQUARYCharacter::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	InitGAS();
+
+	// Push the persistent hero's stats (class/level + gear) onto this pawn's
+	// attribute set. Falls back to InitGAS defaults if there's no hero yet.
+	if (ARLPlayerState* PS = GetPlayerState<ARLPlayerState>())
+	{
+		PS->ApplyStatsToOwner(true);
+	}
 }
 
 void ARELIQUARYCharacter::InitGAS()
 {
-	// PoC shortcut: set starting values directly. We'll replace this with a
-	// proper "default attributes" GameplayEffect once we add effects.
+	// Baseline values so the pawn is valid even before a hero is applied. The
+	// PlayerState's ApplyStatsToOwner overwrites these from the class/level data.
 	Attributes->InitMaxHealth(100.f);
 	Attributes->InitHealth(100.f);
+	Attributes->InitMaxMana(100.f);
+	Attributes->InitMana(100.f);
 	Attributes->InitStrength(10.f);
+	Attributes->InitAgility(10.f);
 	Attributes->InitIntellect(10.f);
+
+	bIsDead = false;
+
+	// React to lethal damage: dying on a run forfeits the haul and sends the
+	// player back to base camp.
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(URLAttributeSet::GetHealthAttribute())
+		.AddUObject(this, &ARELIQUARYCharacter::OnHealthAttributeChanged);
+}
+
+void ARELIQUARYCharacter::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (!bIsDead && Data.NewValue <= 0.f)
+	{
+		HandleRunDeath();
+	}
+}
+
+void ARELIQUARYCharacter::HandleRunDeath()
+{
+	if (bIsDead)
+	{
+		return;
+	}
+	bIsDead = true;
+
+	// Forfeit the run bag and strip temporary run power.
+	if (const UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			if (URLRunSubsystem* Run = GI->GetSubsystem<URLRunSubsystem>())
+			{
+				Run->OnPlayerDied();
+			}
+		}
+	}
+
+	OnRunDeath();
+
+	// Respawn at base camp. (No-op if already there / not configured.)
+	if (BaseCampLevelName != NAME_None)
+	{
+		UGameplayStatics::OpenLevel(this, BaseCampLevelName);
+	}
+}
+
+AActor* ARELIQUARYCharacter::FindFocusedInteractable() const
+{
+	const FVector Start = GetActorLocation();
+	const FVector End = Start + GetActorForwardVector() * InteractionRange;
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	FHitResult Hit;
+	// A short sphere sweep is forgiving about aim for stationary props.
+	const bool bHit = GetWorld() && GetWorld()->SweepSingleByChannel(
+		Hit, Start, End, FQuat::Identity, ECC_Visibility,
+		FCollisionShape::MakeSphere(60.f), Params);
+
+	if (bHit && Hit.GetActor() && Hit.GetActor()->Implements<URLInteractable>())
+	{
+		if (IRLInteractable::Execute_CanInteract(Hit.GetActor(), const_cast<ARELIQUARYCharacter*>(this)))
+		{
+			return Hit.GetActor();
+		}
+	}
+	return nullptr;
+}
+
+bool ARELIQUARYCharacter::DoInteract()
+{
+	if (AActor* Target = FindFocusedInteractable())
+	{
+		IRLInteractable::Execute_Interact(Target, this);
+		return true;
+	}
+	return false;
 }
 
 void ARELIQUARYCharacter::Tick(float Dt)
